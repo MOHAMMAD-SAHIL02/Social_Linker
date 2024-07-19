@@ -6,7 +6,6 @@ import  (
     "io/ioutil"
     "log"
     "net/http"
-    "os"
     "strings"
 )
 
@@ -23,12 +22,12 @@ type OpenAIResponse struct {
 func main() {
     http.HandleFunc("/", indexHandler)
     http.HandleFunc("/get_links", getLinksHandler)
-    log.Println("Listening on PORT :8084")
-    log.Fatal(http.ListenAndServe(":8084", nil))
+    log.Println("Listening on PORT :8086")
+    log.Fatal(http.ListenAndServe(":8086", nil))
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-    tmpl := template.Must(template.ParseFiles("idx.html"))
+    tmpl := template.Must(template.ParseFiles("C:\\Users\\Mohammad Sahil\\OneDrive\\Desktop\\WEbDev\\SocialLinker\\idx.html"))
     tmpl.Execute(w, nil)
 }
 
@@ -40,7 +39,7 @@ func getLinksHandler(w http.ResponseWriter, r *http.Request) {
             http.Error(w, err.Error(), http.StatusInternalServerError)
             return
         }
-        tmpl := template.Must(template.ParseFiles("idx.html"))
+        tmpl := template.Must(template.ParseFiles("C:\\Users\\Mohammad Sahil\\OneDrive\\Desktop\\WEbDev\\SocialLinker\\idx.html"))
         data := PageData{Links: links}
         tmpl.Execute(w, data)
     } else {
@@ -49,8 +48,10 @@ func getLinksHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getSocialMediaLinks(domain string) ([]string, error) {
-    apiKey := os.Getenv("OPENAI_API_KEY")
+    //apiKey := os.Getenv("OPENAI_API_KEY")
+    apiKey:="sk-None-TpmZ7wfP4r7NvWf4BlScT3BlbkFJtXCXTqOiiG7F5hSmbxnw"
     if apiKey == "" {
+        log.Println(apiKey)
         log.Println("OpenAI API key not set")
         return nil, fmt.Errorf("OpenAI API key not set")
     }
@@ -105,6 +106,7 @@ func getSocialMediaLinks(domain string) ([]string, error) {
 
     responseText := openAIResp.Choices[0].Text
     links := extractLinks(responseText)
+    log.Println(links)
 
     return links, nil
 }
@@ -117,6 +119,7 @@ func extractLinks(text string) []string {
         line = strings.TrimSpace(line)
         if strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {
             links = append(links, line)
+            
         }
     }
     return links
