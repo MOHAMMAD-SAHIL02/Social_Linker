@@ -1,12 +1,14 @@
 package main
-import  (
+import (
     "encoding/json"
     "fmt"
-    "html/template"
-    "io/ioutil"
+    "io"
     "log"
     "net/http"
+    "os"
     "strings"
+    "html/template"
+    "github.com/PuerkitoBio/goquery"
 )
 
 type PageData struct {
@@ -34,7 +36,9 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 func getLinksHandler(w http.ResponseWriter, r *http.Request) {
     if r.Method == http.MethodPost {
         domain := r.FormValue("domain")
-        links, err := getSocialMediaLinks(domain)
+        formattedDomain := ensureProtocol(domain)
+
+        links, err := getSocialMediaLinks(formattedDomain)
         if err != nil {
             http.Error(w, err.Error(), http.StatusInternalServerError)
             return
@@ -47,19 +51,55 @@ func getLinksHandler(w http.ResponseWriter, r *http.Request) {
     }
 }
 
+func ensureProtocol(url string) string {
+    if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+        return "http://" + url
+    }
+    return url
+}
+
+func scrapeLinks(domain string) ([]string, error) {
+    response, err := http.Get(domain)
+    if err != nil {
+        return nil, err
+    }
+    defer response.Body.Close()
+
+    if response.StatusCode != 200 {
+        return nil, fmt.Errorf("failed to fetch the webpage, status code: %d", response.StatusCode)
+    }
+
+    doc, err := goquery.NewDocumentFromReader(response.Body)
+    if err != nil {
+        return nil, err
+    }
+
+    var links []string
+    doc.Find("a").Each(func(i int, s *goquery.Selection) {
+        link, exists := s.Attr("href")
+        if exists && (strings.HasPrefix(link, "http://") || strings.HasPrefix(link, "https://")) {
+            links = append(links, link)
+        }
+    })
+
+    return links, nil
+}
+
 func getSocialMediaLinks(domain string) ([]string, error) {
-    //apiKey := os.Getenv("OPENAI_API_KEY")
-    apiKey:="sk-None-TpmZ7wfP4r7NvWf4BlScT3BlbkFJtXCXTqOiiG7F5hSmbxnw"
+    apiKey := os.Getenv("OPENAI_API_KEY")
     if apiKey == "" {
-        log.Println(apiKey)
         log.Println("OpenAI API key not set")
         return nil, fmt.Errorf("OpenAI API key not set")
     }
-    log.Println("OpenAI API key is set:", apiKey)
 
-    prompt := fmt.Sprintf("Find the social media links for the domain %s", domain)
+    links, err := scrapeLinks(domain)
+    if err != nil {
+        return nil, err
+    }
+
+    prompt := fmt.Sprintf("From the following links, identify only the social media links:\n%s", strings.Join(links, "\n"))
     requestBody, err := json.Marshal(map[string]interface{}{
-        "model": "gpt-4", 
+        "model": "gpt-4",
         "messages": []map[string]string{
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": prompt},
@@ -85,11 +125,11 @@ func getSocialMediaLinks(domain string) ([]string, error) {
     defer resp.Body.Close()
 
     if resp.StatusCode != http.StatusOK {
-        bodyBytes, _ := ioutil.ReadAll(resp.Body)
+        bodyBytes, _ := io.ReadAll(resp.Body)
         return nil, fmt.Errorf("failed to get response from OpenAI API, status code: %d, body: %s", resp.StatusCode, bodyBytes)
     }
 
-    body, err := ioutil.ReadAll(resp.Body)
+    body, err := io.ReadAll(resp.Body)
     if err != nil {
         return nil, err
     }
@@ -105,12 +145,10 @@ func getSocialMediaLinks(domain string) ([]string, error) {
     }
 
     responseText := openAIResp.Choices[0].Text
-    links := extractLinks(responseText)
-    log.Println(links)
+    socialMediaLinks := extractLinks(responseText)
 
-    return links, nil
+    return socialMediaLinks, nil
 }
-
 
 func extractLinks(text string) []string {
     var links []string
@@ -119,8 +157,9 @@ func extractLinks(text string) []string {
         line = strings.TrimSpace(line)
         if strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {
             links = append(links, line)
-            
         }
     }
     return links
 }
+
+
