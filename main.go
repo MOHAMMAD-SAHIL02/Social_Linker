@@ -1,4 +1,5 @@
 package main
+
 import (
     "encoding/json"
     "fmt"
@@ -17,7 +18,9 @@ type PageData struct {
 
 type OpenAIResponse struct {
     Choices []struct {
-        Text string `json:"text"`
+        Message struct {
+            Content string `json:"content"`
+        } `json:"message"`
     } `json:"choices"`
 }
 
@@ -29,7 +32,7 @@ func main() {
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-    tmpl := template.Must(template.ParseFiles("C:\\Users\\Mohammad Sahil\\OneDrive\\Desktop\\WEbDev\\SocialLinker\\idx.html"))
+    tmpl := template.Must(template.ParseFiles("./idx.html"))
     tmpl.Execute(w, nil)
 }
 
@@ -43,7 +46,9 @@ func getLinksHandler(w http.ResponseWriter, r *http.Request) {
             http.Error(w, err.Error(), http.StatusInternalServerError)
             return
         }
-        tmpl := template.Must(template.ParseFiles("C:\\Users\\Mohammad Sahil\\OneDrive\\Desktop\\WEbDev\\SocialLinker\\idx.html"))
+
+        log.Println(links)
+        tmpl := template.Must(template.ParseFiles("./idx.html"))
         data := PageData{Links: links}
         tmpl.Execute(w, data)
     } else {
@@ -65,7 +70,7 @@ func scrapeLinks(domain string) ([]string, error) {
     }
     defer response.Body.Close()
 
-    if response.StatusCode != 200 {
+    if response.StatusCode != http.StatusOK {
         return nil, fmt.Errorf("failed to fetch the webpage, status code: %d", response.StatusCode)
     }
 
@@ -87,9 +92,9 @@ func scrapeLinks(domain string) ([]string, error) {
 
 func getSocialMediaLinks(domain string) ([]string, error) {
     apiKey := os.Getenv("OPENAI_API_KEY")
-    if apiKey == "" {
-        log.Println("OpenAI API key not set")
-        return nil, fmt.Errorf("OpenAI API key not set")
+
+    if apiKey == "" || apiKey == "sk-None-VlNzpseaI91CRXpZdbiST3BlbkFJ7UInijs8nUxEl1JldsMo" {
+        return nil, fmt.Errorf("OpenAI API key not set or invalid")
     }
 
     links, err := scrapeLinks(domain)
@@ -97,14 +102,16 @@ func getSocialMediaLinks(domain string) ([]string, error) {
         return nil, err
     }
 
-    prompt := fmt.Sprintf("From the following links, identify only the social media links:\n%s", strings.Join(links, "\n"))
+    log.Println("Scraped Links: ", links)
+
+    prompt := fmt.Sprintf("From the following links, identify only the social media links, and return them in JSON format as follows: {\"social_media_links\": [\"link1\", \"link2\", ...]}\n\nLinks:\n%s", strings.Join(links, "\n"))
     requestBody, err := json.Marshal(map[string]interface{}{
         "model": "gpt-4",
         "messages": []map[string]string{
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": prompt},
         },
-        "max_tokens": 100,
+        "max_tokens": 1024,
     })
     if err != nil {
         return nil, err
@@ -124,19 +131,19 @@ func getSocialMediaLinks(domain string) ([]string, error) {
     }
     defer resp.Body.Close()
 
-    if resp.StatusCode != http.StatusOK {
-        bodyBytes, _ := io.ReadAll(resp.Body)
-        return nil, fmt.Errorf("failed to get response from OpenAI API, status code: %d, body: %s", resp.StatusCode, bodyBytes)
-    }
-
     body, err := io.ReadAll(resp.Body)
     if err != nil {
         return nil, err
     }
 
+    if resp.StatusCode != http.StatusOK {
+        return nil, fmt.Errorf("failed to get response from OpenAI API, status code: %d, body: %s", resp.StatusCode, body)
+    }
+
     var openAIResp OpenAIResponse
     err = json.Unmarshal(body, &openAIResp)
     if err != nil {
+        log.Printf("error parsing response body: %v\n", err)
         return nil, err
     }
 
@@ -144,22 +151,18 @@ func getSocialMediaLinks(domain string) ([]string, error) {
         return nil, fmt.Errorf("no choices returned from OpenAI API")
     }
 
-    responseText := openAIResp.Choices[0].Text
-    socialMediaLinks := extractLinks(responseText)
-
-    return socialMediaLinks, nil
-}
-
-func extractLinks(text string) []string {
-    var links []string
-    lines := strings.Split(text, "\n")
-    for _, line := range lines {
-        line = strings.TrimSpace(line)
-        if strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {
-            links = append(links, line)
-        }
+    responseContent := openAIResp.Choices[0].Message.Content
+    log.Println("OpenAI API Response: ", responseContent)
+    var responseObject struct {
+        SocialMediaLinks []string `json:"social_media_links"`
     }
-    return links
+    err = json.Unmarshal([]byte(responseContent), &responseObject)
+    if err != nil {
+        log.Printf("error parsing JSON content: %v\n", err)
+        return nil, err
+    }
+
+    return responseObject.SocialMediaLinks, nil
 }
 
 
