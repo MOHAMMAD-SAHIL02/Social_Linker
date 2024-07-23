@@ -1,0 +1,6 @@
+A Web-based Application that allows user to get the social media accounts links of their given desired domain.
+Features:-
+
+        1:- HTML,CSS,JS for creating a UI .
+        2:- Go language is used in Back-End to fetch data from given Domain name.
+        3:- OpenAI API Key is used to filter the only Social Media links from the given links.
